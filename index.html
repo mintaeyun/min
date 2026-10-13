@@ -1,0 +1,101 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>계산기</title>
+<style>
+*{box-sizing:border-box}body{margin:0;background:#edf1f7;color:#192338;font-family:system-ui,'맑은 고딕',sans-serif;min-height:100vh;display:grid;place-items:center;padding:24px}main{width:min(900px,100%)}h1{font-size:26px;margin:0 0 8px}.subtitle{color:#667085;margin:0 0 24px}.layout{display:grid;grid-template-columns:minmax(0,1.2fr) minmax(0,1fr);gap:20px}.card{background:white;border:1px solid #dce3ee;border-radius:22px;padding:24px;box-shadow:0 12px 40px #2538580b}.display{background:#17243c;color:white;border-radius:14px;padding:22px;margin-bottom:20px;min-height:144px;text-align:right}.expression{min-height:26px;font-size:19px;color:#c6d5ef;overflow-wrap:anywhere}.result{font-size:38px;font-weight:650;margin-top:16px;overflow-wrap:anywhere}.result.error{font-size:21px;color:#ffb9b9}.keys{display:grid;grid-template-columns:repeat(4,1fr);gap:10px}button{font:inherit;cursor:pointer;border:0;border-radius:12px;min-height:54px;background:#eff2f7;color:#192338;font-size:22px}button:hover{filter:brightness(.95)}button:active{transform:translateY(1px)}button:focus-visible{outline:3px solid #638fff;outline-offset:3px}.operator{background:#e5edff;color:#295bc3}.clear{color:#c03945;background:#fff0f0}.equals{background:#3267db;color:white}.wide{grid-column:span 2}.history-head{display:flex;align-items:center;justify-content:space-between;gap:12px}.history-head h2{font-size:19px;margin:0}.history-head button{font-size:13px;padding:8px 12px;min-height:38px}.history{list-style:none;padding:0;margin:20px 0 0;max-height:440px;overflow:auto}.history li{margin-bottom:10px}.history button{width:100%;text-align:left;font-size:16px;padding:14px;overflow-wrap:anywhere;line-height:1.6}.empty,.storage-note{font-size:14px;color:#667085;line-height:1.6}.help{font-size:13px;color:#667085;margin:18px 0 0}@media(max-width:650px){body{padding:16px}.layout{grid-template-columns:1fr}.card{padding:18px}.history{max-height:260px}.result{font-size:32px}}
+.mode{display:flex;align-items:center;gap:10px;font-size:15px;font-weight:600;margin-bottom:8px}.mode input{width:20px;height:20px;accent-color:#3267db}.mode-help{font-size:13px;color:#667085;line-height:1.6;margin:0 0 18px}
+</style>
+</head>
+<body>
+<main>
+<h1>계산기</h1><p class="subtitle">괄호부터 차근차근, 계산 기록까지 한곳에.</p>
+<div class="layout">
+<section class="card" aria-label="계산기">
+<label class="mode"><input type="checkbox" id="chain-mode" aria-describedby="mode-help">수식 연결 모드</label>
+<p class="mode-help" id="mode-help">켜면 계산 후에도 수식이 이어집니다. 예: 2+3 → Enter → ×4 → (2+3)×4</p>
+<div class="display"><div id="expression" class="expression" aria-label="입력 중인 수식">0</div><div id="result" class="result" role="status" aria-live="polite">0</div></div>
+<div class="keys" id="keys">
+<button class="clear" data-action="clear">C</button><button data-action="delete" aria-label="한 글자 지우기">←</button><button class="operator" data-value="(">(</button><button class="operator" data-value=")">)</button>
+<button data-value="7">7</button><button data-value="8">8</button><button data-value="9">9</button><button class="operator" data-value="/">÷</button>
+<button data-value="4">4</button><button data-value="5">5</button><button data-value="6">6</button><button class="operator" data-value="*">×</button>
+<button data-value="1">1</button><button data-value="2">2</button><button data-value="3">3</button><button class="operator" data-value="-">−</button>
+<button data-value="0">0</button><button data-value=".">.</button><button class="equals" data-action="calculate">=</button><button class="operator" data-value="+">+</button>
+</div><p class="help">Enter 계산 · Backspace 삭제 · Esc 초기화</p>
+</section>
+<aside class="card" aria-label="계산 기록"><div class="history-head"><h2>계산 기록</h2><button id="clear-history">기록 지우기</button></div><p id="empty" class="empty">계산하면 여기에 기록이 쌓입니다.<br>기록을 누르면 수식을 다시 불러옵니다.</p><ul id="history" class="history"></ul><p id="storage-note" class="storage-note" hidden>이 브라우저에서는 기록을 저장할 수 없습니다. 현재 창에서만 기록이 유지됩니다.</p></aside>
+</div>
+</main>
+<script>
+'use strict';
+// 입력을 직접 해석하며 eval이나 외부 라이브러리를 사용하지 않습니다.
+function evaluateExpression(source){
+ let i=0;
+ const fail=()=>{throw new Error('수식을 확인해 주세요');};
+ const finite=n=>{if(!Number.isFinite(n))throw new Error('계산 범위를 초과했습니다');return n;};
+ function primary(){
+  if(source[i]==='('){i++;const n=sum();if(source[i]!==')')fail();i++;return n;}
+  const match=source.slice(i).match(/^(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][+-]?\d+)?/);
+  if(!match)fail();i+=match[0].length;return finite(Number(match[0]));
+ }
+ function unary(){if(source[i]==='+'){i++;return unary();}if(source[i]==='-'){i++;return -unary();}return primary();}
+ function product(){let n=unary();while(source[i]==='*'||source[i]==='/'){const op=source[i++];const r=unary();if(op==='/'&&r===0)throw new Error('0으로 나눌 수 없습니다');n=finite(op==='*'?n*r:n/r);}return n;}
+ function sum(){let n=product();while(source[i]==='+'||source[i]==='-'){const op=source[i++];const r=product();n=finite(op==='+'?n+r:n-r);}return n;}
+ if(!source)fail();const n=sum();if(i!==source.length)fail();return finite(n);
+}
+function formatResult(value){return String(Number(value.toPrecision(12)));}
+function continueExpression(source,operator){
+ // 이미 계산한 덧셈·뺄셈 전체를 다음 곱셈·나눗셈의 대상으로 묶습니다.
+ let depth=0,hasSum=false;
+ for(let i=0;i<source.length;i++){
+  const c=source[i];
+  if(c==='(')depth++;else if(c===')')depth--;
+  else if(depth===0&&(c==='+'||c==='-')&&i>0&&/[\d.)]/.test(source[i-1]))hasSum=true;
+ }
+ return (hasSum&&(operator==='*'||operator==='/')?'('+source+')':source)+operator;
+}
+const expressionElement=document.getElementById('expression'),resultElement=document.getElementById('result');
+const chainMode=document.getElementById('chain-mode');
+const historyElement=document.getElementById('history'),emptyElement=document.getElementById('empty');
+const storageKey='offline-calculator-history-v1';
+let expression='',finished=false,history=[];
+function pretty(s){return s.replaceAll('*','×').replaceAll('/','÷').replaceAll('-','−');}
+function display(){expressionElement.textContent=pretty(expression)||'0';}
+function setResult(text,error=false){resultElement.textContent=text;resultElement.classList.toggle('error',error);}
+function persist(){try{localStorage.setItem(storageKey,JSON.stringify(history));}catch{document.getElementById('storage-note').hidden=false;}}
+function renderHistory(){
+ historyElement.replaceChildren();emptyElement.hidden=history.length>0;
+ for(const item of history){const li=document.createElement('li'),button=document.createElement('button');button.textContent=pretty(item.expression)+' = '+item.result;button.addEventListener('click',()=>{expression=item.expression;finished=false;display();setResult(item.result);});li.append(button);historyElement.append(li);}
+}
+try{const saved=JSON.parse(localStorage.getItem(storageKey)||'[]');if(Array.isArray(saved))history=saved.filter(x=>x&&typeof x.expression==='string'&&typeof x.result==='string'&&x.expression.length<=500&&/^[\d.eE+*/()\-]+$/.test(x.expression)).slice(0,200);}catch{document.getElementById('storage-note').hidden=false;}
+renderHistory();
+function input(value){
+ let next=expression+value;
+ if(finished){
+  if(/^[+*/-]$/.test(value))next=chainMode.checked?continueExpression(expression,value):resultElement.textContent+value;
+  else next=value;
+ }
+ if(next.length>500){setResult('수식은 500자까지 입력할 수 있습니다',true);return;}
+ expression=next;finished=false;display();setResult('…');
+}
+function clear(){expression='';finished=false;display();setResult('0');}
+function remove(){expression=expression.slice(0,-1);finished=false;display();setResult(expression?'…':'0');}
+function calculate(){
+ if(!expression)return;
+ try{const result=formatResult(evaluateExpression(expression));setResult(result);if(!finished){history.unshift({expression,result});history=history.slice(0,200);persist();renderHistory();}finished=true;}
+ catch(error){setResult(error instanceof RangeError?'수식이 너무 복잡합니다':error.message,true);finished=false;}
+}
+document.getElementById('keys').addEventListener('click',event=>{const button=event.target.closest('button');if(!button)return;if(button.dataset.value)input(button.dataset.value);else if(button.dataset.action==='clear')clear();else if(button.dataset.action==='delete')remove();else calculate();});
+document.getElementById('clear-history').addEventListener('click',()=>{history=[];persist();renderHistory();});
+document.addEventListener('keydown',event=>{
+ if(event.ctrlKey||event.metaKey||event.altKey)return;
+ if(/^[0-9.+*/()\-]$/.test(event.key)){event.preventDefault();input(event.key);}
+ else if(event.key==='Enter'||event.key==='='){event.preventDefault();calculate();}
+ else if(event.key==='Backspace'){event.preventDefault();remove();}
+ else if(event.key==='Escape'){event.preventDefault();clear();}
+});
+</script>
+</body>
+</html>
