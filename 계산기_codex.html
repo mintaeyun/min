@@ -6,6 +6,7 @@
 <title>계산기</title>
 <style>
 *{box-sizing:border-box}body{margin:0;background:#edf1f7;color:#192338;font-family:system-ui,'맑은 고딕',sans-serif;min-height:100vh;display:grid;place-items:center;padding:24px}main{width:min(900px,100%)}h1{font-size:26px;margin:0 0 8px}.subtitle{color:#667085;margin:0 0 24px}.layout{display:grid;grid-template-columns:minmax(0,1.2fr) minmax(0,1fr);gap:20px}.card{background:white;border:1px solid #dce3ee;border-radius:22px;padding:24px;box-shadow:0 12px 40px #2538580b}.display{background:#17243c;color:white;border-radius:14px;padding:22px;margin-bottom:20px;min-height:144px;text-align:right}.expression{min-height:26px;font-size:19px;color:#c6d5ef;overflow-wrap:anywhere}.result{font-size:38px;font-weight:650;margin-top:16px;overflow-wrap:anywhere}.result.error{font-size:21px;color:#ffb9b9}.keys{display:grid;grid-template-columns:repeat(4,1fr);gap:10px}button{font:inherit;cursor:pointer;border:0;border-radius:12px;min-height:54px;background:#eff2f7;color:#192338;font-size:22px}button:hover{filter:brightness(.95)}button:active{transform:translateY(1px)}button:focus-visible{outline:3px solid #638fff;outline-offset:3px}.operator{background:#e5edff;color:#295bc3}.clear{color:#c03945;background:#fff0f0}.equals{background:#3267db;color:white}.wide{grid-column:span 2}.history-head{display:flex;align-items:center;justify-content:space-between;gap:12px}.history-head h2{font-size:19px;margin:0}.history-head button{font-size:13px;padding:8px 12px;min-height:38px}.history{list-style:none;padding:0;margin:20px 0 0;max-height:440px;overflow:auto}.history li{margin-bottom:10px}.history button{width:100%;text-align:left;font-size:16px;padding:14px;overflow-wrap:anywhere;line-height:1.6}.empty,.storage-note{font-size:14px;color:#667085;line-height:1.6}.help{font-size:13px;color:#667085;margin:18px 0 0}@media(max-width:650px){body{padding:16px}.layout{grid-template-columns:1fr}.card{padding:18px}.history{max-height:260px}.result{font-size:32px}}
+.mode{display:flex;align-items:center;gap:10px;font-size:15px;font-weight:600;margin-bottom:8px}.mode input{width:20px;height:20px;accent-color:#3267db}.mode-help{font-size:13px;color:#667085;line-height:1.6;margin:0 0 18px}
 </style>
 </head>
 <body>
@@ -13,6 +14,8 @@
 <h1>계산기</h1><p class="subtitle">괄호부터 차근차근, 계산 기록까지 한곳에.</p>
 <div class="layout">
 <section class="card" aria-label="계산기">
+<label class="mode"><input type="checkbox" id="chain-mode" aria-describedby="mode-help">수식 연결 모드</label>
+<p class="mode-help" id="mode-help">켜면 계산 후에도 수식이 이어집니다. 예: 2+3 → Enter → ×4 → (2+3)×4</p>
 <div class="display"><div id="expression" class="expression" aria-label="입력 중인 수식">0</div><div id="result" class="result" role="status" aria-live="polite">0</div></div>
 <div class="keys" id="keys">
 <button class="clear" data-action="clear">C</button><button data-action="delete" aria-label="한 글자 지우기">←</button><button class="operator" data-value="(">(</button><button class="operator" data-value=")">)</button>
@@ -43,7 +46,18 @@ function evaluateExpression(source){
  if(!source)fail();const n=sum();if(i!==source.length)fail();return finite(n);
 }
 function formatResult(value){return String(Number(value.toPrecision(12)));}
+function continueExpression(source,operator){
+ // 이미 계산한 덧셈·뺄셈 전체를 다음 곱셈·나눗셈의 대상으로 묶습니다.
+ let depth=0,hasSum=false;
+ for(let i=0;i<source.length;i++){
+  const c=source[i];
+  if(c==='(')depth++;else if(c===')')depth--;
+  else if(depth===0&&(c==='+'||c==='-')&&i>0&&/[\d.)]/.test(source[i-1]))hasSum=true;
+ }
+ return (hasSum&&(operator==='*'||operator==='/')?'('+source+')':source)+operator;
+}
 const expressionElement=document.getElementById('expression'),resultElement=document.getElementById('result');
+const chainMode=document.getElementById('chain-mode');
 const historyElement=document.getElementById('history'),emptyElement=document.getElementById('empty');
 const storageKey='offline-calculator-history-v1';
 let expression='',finished=false,history=[];
@@ -58,9 +72,13 @@ function renderHistory(){
 try{const saved=JSON.parse(localStorage.getItem(storageKey)||'[]');if(Array.isArray(saved))history=saved.filter(x=>x&&typeof x.expression==='string'&&typeof x.result==='string'&&x.expression.length<=500&&/^[\d.eE+*/()\-]+$/.test(x.expression)).slice(0,200);}catch{document.getElementById('storage-note').hidden=false;}
 renderHistory();
 function input(value){
- if(finished){expression=/^[+*/-]$/.test(value)?resultElement.textContent:'';finished=false;}
- if(expression.length>=500){setResult('수식은 500자까지 입력할 수 있습니다',true);return;}
- expression+=value;display();setResult('…');
+ let next=expression+value;
+ if(finished){
+  if(/^[+*/-]$/.test(value))next=chainMode.checked?continueExpression(expression,value):resultElement.textContent+value;
+  else next=value;
+ }
+ if(next.length>500){setResult('수식은 500자까지 입력할 수 있습니다',true);return;}
+ expression=next;finished=false;display();setResult('…');
 }
 function clear(){expression='';finished=false;display();setResult('0');}
 function remove(){expression=expression.slice(0,-1);finished=false;display();setResult(expression?'…':'0');}
